@@ -35,6 +35,11 @@ function App() {
         throw new Error('Failed to get route');
       }
 
+      // Cost protection: limit route distance to 100 miles (160km)
+      if (routeData.totalDistance > 160934) {
+        throw new Error('Route too long (over 100 miles). Please select a shorter route to manage API costs.');
+      }
+
       setRoute(routeData);
       
       // Start caching process
@@ -91,6 +96,9 @@ function App() {
       <header className="app-header">
         <h1>Street View Directions Video</h1>
         <p>Select start and end locations to generate a street view video of your route</p>
+        <div className="cost-warning">
+          <p><strong>⚠️ Cost Notice:</strong> This app uses Google Maps APIs which may incur charges. Routes are limited to 100 miles to manage costs.</p>
+        </div>
       </header>
 
       <main className="app-main">
