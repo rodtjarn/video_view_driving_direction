@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { LocationPicker } from './components/LocationPicker';
 import { StreetViewPlayer } from './components/StreetViewPlayer';
 import { RouteMap } from './components/RouteMap';
+import { CacheProgress } from './components/CacheProgress';
 import { useGoogleMaps } from './hooks/useGoogleMaps';
 import { Location, Route, StreetViewFrame, VideoPlayerState } from './types';
+import { CacheProgress as CacheProgressType } from './services/imageCache';
 import './App.css';
 
 function App() {
@@ -13,8 +15,10 @@ function App() {
   const [streetViewFrames, setStreetViewFrames] = useState<StreetViewFrame[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [playerState, setPlayerState] = useState<VideoPlayerState | null>(null);
+  const [cacheProgress, setCacheProgress] = useState<CacheProgressType | null>(null);
+  const [isCaching, setIsCaching] = useState(false);
 
-  const { isLoaded, error, getRoute, generateStreetViewFrames } = useGoogleMaps();
+  const { isLoaded, error, getRoute, generateStreetViewFramesWithCache } = useGoogleMaps();
 
   const handleGenerateVideo = async () => {
     if (!startLocation || !endLocation) {
@@ -33,14 +37,29 @@ function App() {
 
       setRoute(routeData);
       
-      const frames = await generateStreetViewFrames(routeData);
+      // Start caching process
+      setIsCaching(true);
+      setCacheProgress(null);
+      
+      const frames = await generateStreetViewFramesWithCache(routeData, (progress) => {
+        setCacheProgress(progress);
+      });
+      
       setStreetViewFrames(frames);
+      
+      // Hide cache progress after completion
+      setTimeout(() => {
+        setIsCaching(false);
+        setCacheProgress(null);
+      }, 3000);
       
     } catch (err) {
       console.error('Error generating video:', err);
       alert(err instanceof Error ? err.message : 'Failed to generate street view video');
     } finally {
       setIsLoading(false);
+      setIsCaching(false);
+      setCacheProgress(null);
     }
   };
 
@@ -102,6 +121,11 @@ function App() {
             )}
           </div>
         </section>
+
+        <CacheProgress 
+          progress={cacheProgress} 
+          isVisible={isCaching} 
+        />
 
         {route && (
           <section className="route-info">

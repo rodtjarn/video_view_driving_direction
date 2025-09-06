@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { GoogleMapsService } from '../services/googleMaps';
 import { Location, Route, StreetViewFrame } from '../types';
+import { CacheProgress } from '../services/imageCache';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -79,11 +80,30 @@ export const useGoogleMaps = () => {
     }
   }, [mapsService]);
 
+  const generateStreetViewFramesWithCache = useCallback(async (
+    route: Route,
+    onProgress?: (progress: CacheProgress) => void
+  ): Promise<StreetViewFrame[]> => {
+    if (!mapsService) {
+      setError('Google Maps service not initialized');
+      return [];
+    }
+
+    try {
+      const frames = await mapsService.generateStreetViewFramesWithCache(route, 100, onProgress);
+      return frames;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate and cache street view frames');
+      return [];
+    }
+  }, [mapsService]);
+
   return {
     isLoaded,
     error,
     getRoute,
     generateStreetViewFrames,
+    generateStreetViewFramesWithCache,
     mapsService
   };
 };

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StreetViewFrame, VideoPlayerState } from '../types';
+import { imageCache } from '../services/imageCache';
 
 interface StreetViewPlayerProps {
   frames: StreetViewFrame[];
@@ -19,6 +20,7 @@ export const StreetViewPlayer: React.FC<StreetViewPlayerProps> = ({
   });
   
   const [lastSuccessfulImageUrl, setLastSuccessfulImageUrl] = useState<string | null>(null);
+  const [cachedImageUrls, setCachedImageUrls] = useState<Map<string, string>>(new Map());
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -30,6 +32,28 @@ export const StreetViewPlayer: React.FC<StreetViewPlayerProps> = ({
       currentFrame: 0,
       progress: 0,
     }));
+    
+    // Check for cached images when frames change
+    const checkCachedImages = async () => {
+      const newCachedUrls = new Map<string, string>();
+      
+      for (const frame of frames) {
+        try {
+          const cachedUrl = await imageCache.getCachedImage(frame.imageUrl);
+          if (cachedUrl) {
+            newCachedUrls.set(frame.imageUrl, cachedUrl);
+          }
+        } catch (error) {
+          console.warn('Failed to check cached image:', error);
+        }
+      }
+      
+      setCachedImageUrls(newCachedUrls);
+    };
+    
+    if (frames.length > 0) {
+      checkCachedImages();
+    }
   }, [frames]);
 
   useEffect(() => {
@@ -108,6 +132,14 @@ export const StreetViewPlayer: React.FC<StreetViewPlayerProps> = ({
   };
 
   const currentFrame = frames[playerState.currentFrame];
+  
+  // Get the best available image URL (cached first, then original, then fallback)
+  const getImageUrl = () => {
+    if (!currentFrame) return lastSuccessfulImageUrl || '';
+    
+    const cachedUrl = cachedImageUrls.get(currentFrame.imageUrl);
+    return cachedUrl || currentFrame.imageUrl;
+  };
 
   if (frames.length === 0) {
     return (
@@ -125,16 +157,29 @@ export const StreetViewPlayer: React.FC<StreetViewPlayerProps> = ({
         {(currentFrame || lastSuccessfulImageUrl) && (
           <img
             ref={imageRef}
-            src={currentFrame?.imageUrl || lastSuccessfulImageUrl || ''}
+            src={getImageUrl()}
             alt={`Street view frame ${playerState.currentFrame + 1}`}
             className="street-view-image"
             onLoad={() => {
-              if (currentFrame?.imageUrl) {
-                setLastSuccessfulImageUrl(currentFrame.imageUrl);
+              const imageUrl = getImageUrl();
+              if (imageUrl) {
+                setLastSuccessfulImageUrl(imageUrl);
               }
             }}
-            onError={() => {
+            onError={async () => {
               console.warn(`Failed to load frame ${playerState.currentFrame}`);
+              
+              // Try to fallback to cached version if original failed
+              if (currentFrame && !cachedImageUrls.has(currentFrame.imageUrl)) {
+                try {
+                  const cachedUrl = await imageCache.getCachedImage(currentFrame.imageUrl);
+                  if (cachedUrl) {
+                    setCachedImageUrls(prev => new Map(prev).set(currentFrame.imageUrl, cachedUrl));
+                  }
+                } catch (error) {
+                  console.warn('Failed to get cached fallback:', error);
+                }
+              }
             }}
           />
         )}

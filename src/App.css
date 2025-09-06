@@ -374,6 +374,88 @@ body {
   text-align: center;
 }
 
+/* Cache Progress Component */
+.cache-progress {
+  background: white;
+  padding: 25px;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  margin: 20px 0;
+  border-left: 4px solid #4285f4;
+}
+
+.cache-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.cache-progress-header h3 {
+  margin: 0;
+  color: #333;
+  font-size: 18px;
+}
+
+.cache-progress-percentage {
+  font-size: 24px;
+  font-weight: bold;
+  color: #4285f4;
+}
+
+.cache-progress-bar {
+  height: 12px;
+  background: #e0e0e0;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 15px;
+}
+
+.cache-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4285f4, #34a853);
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.cache-progress-stats {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+}
+
+.cache-stat {
+  padding: 8px 12px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.cache-stat.cached {
+  background: #d4edda;
+  color: #155724;
+}
+
+.cache-stat.remaining {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.cache-stat.failed {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.cache-progress-message {
+  text-align: center;
+  color: #666;
+  font-size: 14px;
+  margin: 0;
+  line-height: 1.4;
+}
+
 @media (max-width: 768px) {
   .app {
     padding: 10px;

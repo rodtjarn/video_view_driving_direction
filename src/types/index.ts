@@ -27,6 +27,7 @@ export interface StreetViewFrame {
   pitch: number;
   imageUrl: string;
   timestamp: number;
+  isCached?: boolean;
 }
 
 export interface VideoPlayerState {

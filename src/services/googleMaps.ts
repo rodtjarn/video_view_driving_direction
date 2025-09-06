@@ -1,4 +1,5 @@
 import { Location, Route, RouteStep, StreetViewFrame } from '../types';
+import { imageCache, CacheProgress } from './imageCache';
 
 export class GoogleMapsService {
   private directionsService: google.maps.DirectionsService | null = null;
@@ -88,6 +89,34 @@ export class GoogleMapsService {
     }
 
     return frames;
+  }
+
+  async generateStreetViewFramesWithCache(
+    route: Route, 
+    intervalMeters: number = 100,
+    onProgress?: (progress: CacheProgress) => void
+  ): Promise<StreetViewFrame[]> {
+    if (!this.streetViewService) {
+      throw new Error('Street View service not initialized');
+    }
+
+    // First generate frames with URLs
+    const frames = await this.generateStreetViewFrames(route, intervalMeters);
+    
+    // Extract all image URLs for caching
+    const imageUrls = frames.map(frame => frame.imageUrl);
+    
+    // Cache all images in the background
+    const cachedUrls = await imageCache.cacheImages(imageUrls, onProgress);
+    
+    // Update frames with cached URLs where available
+    const updatedFrames = frames.map(frame => ({
+      ...frame,
+      imageUrl: cachedUrls.get(frame.imageUrl) || frame.imageUrl,
+      isCached: cachedUrls.has(frame.imageUrl)
+    }));
+
+    return updatedFrames;
   }
 
   private interpolateRoutePoints(route: Route, intervalMeters: number): Location[] {
