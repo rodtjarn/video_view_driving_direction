@@ -67,32 +67,29 @@ export class GoogleMapsService {
 
     const frames: StreetViewFrame[] = [];
     const points = this.interpolateRoutePoints(route, intervalMeters);
-    const seenPanoramas = new Set<string>();
+    const seenLocations = new Set<string>();
 
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
       const nextPoint = points[i + 1];
       
       try {
-        // Get panorama metadata first to check for duplicates
-        const panoramaData = await this.getPanoramaMetadata(point);
+        const heading = nextPoint ? this.calculateHeading(point, nextPoint) : 0;
+        const imageUrl = await this.getStreetViewImage(point, heading);
         
-        if (!panoramaData || seenPanoramas.has(panoramaData.panoId)) {
-          continue; // Skip if no panorama available or already seen
+        // Simple location-based deduplication to avoid adjacent duplicate coordinates
+        const locationKey = `${Math.round(point.lat * 10000)},${Math.round(point.lng * 10000)}`;
+        if (seenLocations.has(locationKey)) {
+          continue;
         }
-        
-        seenPanoramas.add(panoramaData.panoId);
-        
-        const heading = nextPoint ? this.calculateHeading(panoramaData.location, nextPoint) : 0;
-        const imageUrl = await this.getStreetViewImage(panoramaData.location, heading);
+        seenLocations.add(locationKey);
         
         frames.push({
-          location: panoramaData.location,
+          location: point,
           heading,
           pitch: 0,
           imageUrl,
-          timestamp: i,
-          panoramaId: panoramaData.panoId
+          timestamp: i
         });
       } catch (error) {
         console.warn(`Failed to get street view for point ${i}:`, error);
@@ -238,7 +235,7 @@ export class GoogleMapsService {
     });
   }
 
-  async getPanoramaMetadata(location: Location): Promise<{ panoId: string; location: Location } | null> {
+  async getPanoramaMetadata(location: Location): Promise<{ panoId: string; location: Location; imageDate?: string } | null> {
     if (!this.streetViewService) {
       throw new Error('Street View service not initialized');
     }
@@ -254,13 +251,71 @@ export class GoogleMapsService {
             location: {
               lat: data.location!.latLng!.lat(),
               lng: data.location!.latLng!.lng()
-            }
+            },
+            imageDate: data.imageDate || undefined
           });
         } else {
           resolve(null);
         }
       });
     });
+  }
+
+  async findBestPanoramaInRadius(location: Location, radius: number = 100): Promise<{ panoId: string; location: Location; imageDate?: string } | null> {
+    const candidates: Array<{ panoId: string; location: Location; imageDate?: string; distance: number }> = [];
+    
+    // Search in a much smaller pattern - just 5 key points for speed
+    const searchPoints = [
+      location, // Center
+      { lat: location.lat + 0.0005, lng: location.lng }, // ~55m north
+      { lat: location.lat - 0.0005, lng: location.lng }, // ~55m south  
+      { lat: location.lat, lng: location.lng + 0.0005 }, // ~55m east
+      { lat: location.lat, lng: location.lng - 0.0005 }  // ~55m west
+    ];
+    
+    for (const searchPoint of searchPoints) {
+      try {
+        const panoramaData = await this.getPanoramaMetadata(searchPoint);
+        if (panoramaData) {
+          const distance = this.calculateDistance(location, panoramaData.location);
+          // Only consider panoramas within the specified radius
+          if (distance <= radius) {
+            candidates.push({
+              ...panoramaData,
+              distance
+            });
+          }
+        }
+      } catch (error) {
+        // Continue searching other points
+      }
+    }
+    
+    if (candidates.length === 0) {
+      return null;
+    }
+    
+    // Remove duplicates based on panoId
+    const uniqueCandidates = candidates.filter((candidate, index, array) => 
+      array.findIndex(c => c.panoId === candidate.panoId) === index
+    );
+    
+    // Sort by image date (newest first), then by distance (closest first)
+    const sortedCandidates = uniqueCandidates.sort((a, b) => {
+      // Compare dates if both have them
+      if (a.imageDate && b.imageDate) {
+        const dateA = new Date(a.imageDate);
+        const dateB = new Date(b.imageDate);
+        if (dateB.getTime() !== dateA.getTime()) {
+          return dateB.getTime() - dateA.getTime(); // Newer first
+        }
+      }
+      
+      // If dates are equal or missing, prefer closer distance
+      return a.distance - b.distance;
+    });
+    
+    return sortedCandidates[0];
   }
 
   private isTurnSegment(path: google.maps.LatLng[], index: number): boolean {
@@ -330,5 +385,32 @@ export class GoogleMapsService {
     }
     
     return false;
+  }
+
+  private generateSearchGrid(center: Location, radiusMeters: number, pointsPerDirection: number): Location[] {
+    const points: Location[] = [center]; // Include the center point
+    
+    // Convert meters to approximate degrees (very rough approximation)
+    const metersPerDegree = 111320; // Rough approximation at equator
+    const radiusDegrees = radiusMeters / metersPerDegree;
+    
+    // Generate points in a grid pattern
+    for (let i = 1; i <= pointsPerDirection; i++) {
+      const stepSize = (radiusDegrees / pointsPerDirection) * i;
+      
+      // Cardinal directions
+      points.push({ lat: center.lat + stepSize, lng: center.lng }); // North
+      points.push({ lat: center.lat - stepSize, lng: center.lng }); // South  
+      points.push({ lat: center.lat, lng: center.lng + stepSize }); // East
+      points.push({ lat: center.lat, lng: center.lng - stepSize }); // West
+      
+      // Diagonal directions for better coverage
+      points.push({ lat: center.lat + stepSize, lng: center.lng + stepSize }); // NE
+      points.push({ lat: center.lat + stepSize, lng: center.lng - stepSize }); // NW
+      points.push({ lat: center.lat - stepSize, lng: center.lng + stepSize }); // SE
+      points.push({ lat: center.lat - stepSize, lng: center.lng - stepSize }); // SW
+    }
+    
+    return points;
   }
 }

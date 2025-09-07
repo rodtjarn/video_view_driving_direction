@@ -18,7 +18,10 @@ export const RouteMap: React.FC<RouteMapProps> = ({
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
   const currentPositionMarkerRef = useRef<google.maps.Marker | null>(null);
+  const streetViewRef = useRef<HTMLDivElement>(null);
+  const streetViewPanoramaRef = useRef<google.maps.StreetViewPanorama | null>(null);
   const [isMapInitialized, setIsMapInitialized] = useState(false);
+  const [showStreetView, setShowStreetView] = useState(false);
 
   useEffect(() => {
     if (!isGoogleMapsLoaded || !mapRef.current || !route || isMapInitialized) {
@@ -31,7 +34,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
         center: route.start,
         mapTypeId: google.maps.MapTypeId.ROADMAP,
         fullscreenControl: false,
-        streetViewControl: false,
+        streetViewControl: true, // Enable Street View control (pegman)
       });
 
       const directionsRenderer = new google.maps.DirectionsRenderer({
@@ -77,11 +80,28 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       });
 
       currentPositionMarkerRef.current = currentPositionMarker;
+
+      // Initialize Street View panorama
+      if (streetViewRef.current) {
+        const streetViewPanorama = new google.maps.StreetViewPanorama(streetViewRef.current, {
+          position: route.start,
+          pov: {
+            heading: 0,
+            pitch: 0
+          },
+          zoom: 1,
+          visible: showStreetView
+        });
+        
+        map.setStreetView(streetViewPanorama);
+        streetViewPanoramaRef.current = streetViewPanorama;
+      }
+
       setIsMapInitialized(true);
     } catch (error) {
       console.error('Failed to initialize map:', error);
     }
-  }, [isGoogleMapsLoaded, route, isMapInitialized]);
+  }, [isGoogleMapsLoaded, route, isMapInitialized, showStreetView]);
 
   useEffect(() => {
     if (!currentPositionMarkerRef.current || !frames.length || currentFrame < 0) {
@@ -96,8 +116,19 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       if (mapInstanceRef.current) {
         mapInstanceRef.current.panTo(position);
       }
+
+      // Update Street View panorama position if it exists
+      if (streetViewPanoramaRef.current && showStreetView) {
+        streetViewPanoramaRef.current.setPosition(position);
+        if (frame.heading !== undefined) {
+          streetViewPanoramaRef.current.setPov({
+            heading: frame.heading,
+            pitch: frame.pitch || 0
+          });
+        }
+      }
     }
-  }, [currentFrame, frames]);
+  }, [currentFrame, frames, showStreetView]);
 
   if (!isGoogleMapsLoaded) {
     return (
@@ -117,9 +148,27 @@ export const RouteMap: React.FC<RouteMapProps> = ({
 
   return (
     <div className="route-map">
-      <div ref={mapRef} className="map-container" />
+      <div className="map-controls">
+        <button 
+          onClick={() => setShowStreetView(!showStreetView)}
+          className={`street-view-toggle ${showStreetView ? 'active' : ''}`}
+        >
+          {showStreetView ? '🗺️ Show Map' : '👁️ Show Street View'}
+        </button>
+      </div>
+      
+      <div className="map-container-wrapper">
+        <div ref={mapRef} className={`map-container ${showStreetView ? 'split-view' : ''}`} />
+        {showStreetView && (
+          <div ref={streetViewRef} className="street-view-container" />
+        )}
+      </div>
+      
       <div className="map-info">
         <p>Current position: Frame {currentFrame + 1} of {frames.length}</p>
+        {showStreetView && (
+          <p>💡 You can also drag the pegman (little person) on the map to explore Street View anywhere!</p>
+        )}
       </div>
     </div>
   );

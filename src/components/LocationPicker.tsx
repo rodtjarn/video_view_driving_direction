@@ -28,47 +28,59 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       return;
     }
 
-    // Only initialize if not already initialized
-    if (!startAutocomplete && startInputRef.current) {
-      try {
-        const autocomplete = new google.maps.places.Autocomplete(startInputRef.current);
-        autocomplete.addListener('place_changed', () => {
-          const place = autocomplete.getPlace();
-          if (place.geometry?.location) {
-            const location: Location = {
-              lat: place.geometry.location.lat(),
-              lng: place.geometry.location.lng(),
-              address: place.formatted_address || place.name
-            };
-            onStartLocationChange(location);
-          }
-        });
-        setStartAutocomplete(autocomplete);
-      } catch (error) {
-        console.error('Failed to initialize start location autocomplete:', error);
+    // Add a small delay to ensure Places library is fully loaded
+    const initializeAutocomplete = () => {
+      // Only initialize if not already initialized
+      if (!startAutocomplete && startInputRef.current) {
+        try {
+          const autocomplete = new google.maps.places.Autocomplete(startInputRef.current);
+          autocomplete.addListener('place_changed', () => {
+            const place = autocomplete.getPlace();
+            if (place.geometry?.location) {
+              const location: Location = {
+                lat: place.geometry.location.lat(),
+                lng: place.geometry.location.lng(),
+                address: place.formatted_address || place.name
+              };
+              onStartLocationChange(location);
+            }
+          });
+          setStartAutocomplete(autocomplete);
+        } catch (error) {
+          console.error('Failed to initialize start location autocomplete:', error);
+          // Retry after a short delay
+          setTimeout(initializeAutocomplete, 1000);
+          return;
+        }
       }
-    }
 
-    // Only initialize if not already initialized
-    if (!endAutocomplete && endInputRef.current) {
-      try {
-        const autocomplete = new google.maps.places.Autocomplete(endInputRef.current);
-        autocomplete.addListener('place_changed', () => {
-          const place = autocomplete.getPlace();
-          if (place.geometry?.location) {
-            const location: Location = {
-              lat: place.geometry.location.lat(),
-              lng: place.geometry.location.lng(),
-              address: place.formatted_address || place.name
-            };
-            onEndLocationChange(location);
-          }
-        });
-        setEndAutocomplete(autocomplete);
-      } catch (error) {
-        console.error('Failed to initialize end location autocomplete:', error);
+      // Only initialize if not already initialized
+      if (!endAutocomplete && endInputRef.current) {
+        try {
+          const autocomplete = new google.maps.places.Autocomplete(endInputRef.current);
+          autocomplete.addListener('place_changed', () => {
+            const place = autocomplete.getPlace();
+            if (place.geometry?.location) {
+              const location: Location = {
+                lat: place.geometry.location.lat(),
+                lng: place.geometry.location.lng(),
+                address: place.formatted_address || place.name
+              };
+              onEndLocationChange(location);
+            }
+          });
+          setEndAutocomplete(autocomplete);
+        } catch (error) {
+          console.error('Failed to initialize end location autocomplete:', error);
+          // Retry after a short delay
+          setTimeout(initializeAutocomplete, 1000);
+          return;
+        }
       }
-    }
+    };
+
+    // Small delay to ensure Places API is fully ready
+    setTimeout(initializeAutocomplete, 100);
 
     return () => {
       // Cleanup on unmount only
@@ -79,7 +91,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         google.maps.event.clearInstanceListeners(endAutocomplete);
       }
     };
-  }, [isGoogleMapsLoaded, startAutocomplete, endAutocomplete]);
+  }, [isGoogleMapsLoaded]); // Removed circular dependencies
 
   const handleStartInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.value) {
