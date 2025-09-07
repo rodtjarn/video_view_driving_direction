@@ -67,21 +67,32 @@ export class GoogleMapsService {
 
     const frames: StreetViewFrame[] = [];
     const points = this.interpolateRoutePoints(route, intervalMeters);
+    const seenPanoramas = new Set<string>();
 
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
       const nextPoint = points[i + 1];
       
       try {
-        const heading = nextPoint ? this.calculateHeading(point, nextPoint) : 0;
-        const imageUrl = await this.getStreetViewImage(point, heading);
+        // Get panorama metadata first to check for duplicates
+        const panoramaData = await this.getPanoramaMetadata(point);
+        
+        if (!panoramaData || seenPanoramas.has(panoramaData.panoId)) {
+          continue; // Skip if no panorama available or already seen
+        }
+        
+        seenPanoramas.add(panoramaData.panoId);
+        
+        const heading = nextPoint ? this.calculateHeading(panoramaData.location, nextPoint) : 0;
+        const imageUrl = await this.getStreetViewImage(panoramaData.location, heading);
         
         frames.push({
-          location: point,
+          location: panoramaData.location,
           heading,
           pitch: 0,
           imageUrl,
-          timestamp: i
+          timestamp: i,
+          panoramaId: panoramaData.panoId
         });
       } catch (error) {
         console.warn(`Failed to get street view for point ${i}:`, error);
@@ -100,8 +111,12 @@ export class GoogleMapsService {
       throw new Error('Street View service not initialized');
     }
 
-    // First generate frames with URLs
+    // First generate deduplicated frames with URLs
     const frames = await this.generateStreetViewFrames(route, intervalMeters);
+    
+    if (frames.length === 0) {
+      return frames;
+    }
     
     // Extract all image URLs for caching
     const imageUrls = frames.map(frame => frame.imageUrl);
@@ -219,6 +234,31 @@ export class GoogleMapsService {
         radius: 50
       }, (data, status) => {
         resolve(status === google.maps.StreetViewStatus.OK);
+      });
+    });
+  }
+
+  async getPanoramaMetadata(location: Location): Promise<{ panoId: string; location: Location } | null> {
+    if (!this.streetViewService) {
+      throw new Error('Street View service not initialized');
+    }
+
+    return new Promise((resolve) => {
+      this.streetViewService!.getPanorama({
+        location: location,
+        radius: 50
+      }, (data, status) => {
+        if (status === google.maps.StreetViewStatus.OK && data) {
+          resolve({
+            panoId: data.location!.pano!,
+            location: {
+              lat: data.location!.latLng!.lat(),
+              lng: data.location!.latLng!.lng()
+            }
+          });
+        } else {
+          resolve(null);
+        }
       });
     });
   }

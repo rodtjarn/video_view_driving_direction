@@ -28,6 +28,7 @@ export interface StreetViewFrame {
   imageUrl: string;
   timestamp: number;
   isCached?: boolean;
+  panoramaId?: string;
 }
 
 export interface VideoPlayerState {
