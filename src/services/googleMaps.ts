@@ -121,12 +121,14 @@ export class GoogleMapsService {
 
   private interpolateRoutePoints(route: Route, intervalMeters: number): Location[] {
     const points: Location[] = [];
+    const turnDensity = 25; // Number of extra images before/after each turn
+    const straightInterval = intervalMeters * 5; // 5x normal interval for straight roads (80% fewer images)
     
-    // Use the detailed path from Google's directions if available
+    // Use Google's detailed path to stay on roads, but adjust density based on turn instructions
     if (route.encodedPath && route.encodedPath.length > 0) {
       let accumulatedDistance = 0;
       const firstPoint = { lat: route.encodedPath[0].lat(), lng: route.encodedPath[0].lng() };
-      points.push(firstPoint); // Add first point
+      points.push(firstPoint);
       
       for (let i = 1; i < route.encodedPath.length; i++) {
         const prevPoint = { lat: route.encodedPath[i - 1].lat(), lng: route.encodedPath[i - 1].lng() };
@@ -135,8 +137,11 @@ export class GoogleMapsService {
         
         accumulatedDistance += segmentDistance;
         
-        // Add point if we've traveled enough distance
-        if (accumulatedDistance >= intervalMeters) {
+        // Check if we're near a turn instruction location
+        const nearTurn = this.isNearTurnInstruction(currentPoint, route.steps);
+        const currentInterval = nearTurn ? intervalMeters / turnDensity : straightInterval;
+        
+        if (accumulatedDistance >= currentInterval) {
           points.push(currentPoint);
           accumulatedDistance = 0;
         }
@@ -146,23 +151,6 @@ export class GoogleMapsService {
       const lastPoint = { lat: route.encodedPath[route.encodedPath.length - 1].lat(), lng: route.encodedPath[route.encodedPath.length - 1].lng() };
       if (points[points.length - 1] !== lastPoint) {
         points.push(lastPoint);
-      }
-    } else {
-      // Fallback to step-based interpolation
-      let accumulatedDistance = 0;
-
-      for (let i = 0; i < route.steps.length - 1; i++) {
-        const start = route.steps[i].location;
-        const end = route.steps[i + 1].location;
-        const stepDistance = route.steps[i].distance;
-
-        if (points.length === 0) {
-          points.push(start);
-        }
-
-        const segmentPoints = this.interpolateSegment(start, end, intervalMeters, accumulatedDistance);
-        points.push(...segmentPoints);
-        accumulatedDistance += stepDistance;
       }
     }
 
@@ -233,5 +221,74 @@ export class GoogleMapsService {
         resolve(status === google.maps.StreetViewStatus.OK);
       });
     });
+  }
+
+  private isTurnSegment(path: google.maps.LatLng[], index: number): boolean {
+    // Check if we're near a turn by looking at a wider range of points
+    const lookAhead = 5; // Look 5 points ahead and behind
+    const minIndex = Math.max(0, index - lookAhead);
+    const maxIndex = Math.min(path.length - 1, index + lookAhead);
+    
+    // If we don't have enough points, consider it a turn to be safe
+    if (maxIndex - minIndex < 3) return true;
+    
+    let maxHeadingChange = 0;
+    
+    // Check heading changes in the surrounding area
+    for (let i = minIndex; i < maxIndex - 1; i++) {
+      if (i + 2 < path.length) {
+        const p1 = { lat: path[i].lat(), lng: path[i].lng() };
+        const p2 = { lat: path[i + 1].lat(), lng: path[i + 1].lng() };
+        const p3 = { lat: path[i + 2].lat(), lng: path[i + 2].lng() };
+        
+        const heading1 = this.calculateHeading(p1, p2);
+        const heading2 = this.calculateHeading(p2, p3);
+        
+        let headingDiff = Math.abs(heading2 - heading1);
+        if (headingDiff > 180) headingDiff = 360 - headingDiff;
+        
+        maxHeadingChange = Math.max(maxHeadingChange, headingDiff);
+      }
+    }
+    
+    // Hyper-sensitive threshold - consider it a turn if heading changes more than 1 degree
+    return maxHeadingChange > 1;
+  }
+
+  private isStepATurn(instruction: string): boolean {
+    const turnKeywords = ['turn', 'left', 'right', 'exit', 'ramp', 'merge', 'fork'];
+    const lowerInstruction = instruction.toLowerCase();
+    return turnKeywords.some(keyword => lowerInstruction.includes(keyword));
+  }
+
+  private getPointAtDistance(start: Location, end: Location, distanceMeters: number): Location | null {
+    const totalDistance = this.calculateDistance(start, end);
+    if (totalDistance === 0) return null;
+    
+    const ratio = Math.abs(distanceMeters) / totalDistance;
+    if (ratio > 1) return null;
+    
+    const direction = distanceMeters >= 0 ? 1 : -1;
+    const adjustedRatio = ratio * direction;
+    
+    return {
+      lat: start.lat + (end.lat - start.lat) * adjustedRatio,
+      lng: start.lng + (end.lng - start.lng) * adjustedRatio
+    };
+  }
+
+  private isNearTurnInstruction(point: Location, steps: RouteStep[]): boolean {
+    const turnRadius = 150; // meters - consider points within 150m of a turn instruction
+    
+    for (const step of steps) {
+      if (this.isStepATurn(step.instruction)) {
+        const distance = this.calculateDistance(point, step.location);
+        if (distance <= turnRadius) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
   }
 }
