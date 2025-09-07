@@ -229,6 +229,68 @@ body {
   font-size: 12px;
 }
 
+.turn-indicator {
+  color: #ff6b35;
+  font-weight: bold;
+  animation: pulse 1.5s infinite;
+}
+
+.arrival-indicator {
+  color: #34a853;
+  font-weight: bold;
+  animation: celebration 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes celebration {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.9; }
+}
+
+.turn-arrow-small {
+  position: absolute;
+  bottom: 15px;
+  right: 15px;
+  z-index: 10;
+}
+
+.turn-arrow-icon {
+  font-size: 20px;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  animation: subtlePulse 2s infinite;
+}
+
+.turn-arrow-icon.left {
+  background: rgba(52, 168, 83, 0.9);
+}
+
+.turn-arrow-icon.right {
+  background: rgba(66, 133, 244, 0.9);
+}
+
+.turn-arrow-icon.uturn {
+  background: rgba(234, 67, 53, 0.9);
+}
+
+.turn-arrow-icon.straight {
+  background: rgba(251, 188, 5, 0.9);
+}
+
+@keyframes subtlePulse {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
 .player-controls {
   display: flex;
   flex-direction: column;

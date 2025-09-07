@@ -6,6 +6,7 @@ interface RouteMapProps {
   frames: StreetViewFrame[];
   currentFrame: number;
   isGoogleMapsLoaded: boolean;
+  isPlaying?: boolean;
 }
 
 export const RouteMap: React.FC<RouteMapProps> = ({
@@ -13,6 +14,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
   frames,
   currentFrame,
   isGoogleMapsLoaded,
+  isPlaying = false,
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
@@ -30,7 +32,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
 
     try {
       const map = new google.maps.Map(mapRef.current, {
-        zoom: 13,
+        zoom: 18, // Increased to 18 for maximum turn detail visibility
         center: route.start,
         mapTypeId: google.maps.MapTypeId.ROADMAP,
         fullscreenControl: false,
@@ -39,6 +41,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
 
       const directionsRenderer = new google.maps.DirectionsRenderer({
         suppressMarkers: false,
+        preserveViewport: false, // Allow initial auto-fit to show full route
         polylineOptions: {
           strokeColor: '#4285F4',
           strokeWeight: 5,
@@ -60,6 +63,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
         (result, status) => {
           if (status === google.maps.DirectionsStatus.OK && result) {
             directionsRenderer.setDirections(result);
+            // Start with full route view - DirectionsRenderer will auto-fit initially
           }
         }
       );
@@ -114,7 +118,16 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       currentPositionMarkerRef.current.setPosition(position);
       
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.panTo(position);
+        if (isPlaying) {
+          // When playing, zoom in and follow position for turn visibility
+          mapInstanceRef.current.panTo(position);
+          if (mapInstanceRef.current.getZoom() < 18) {
+            mapInstanceRef.current.setZoom(18);
+          }
+        } else {
+          // When not playing, just update marker position without changing zoom/pan
+          // Keep full route view visible
+        }
       }
 
       // Update Street View panorama position if it exists
@@ -128,7 +141,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
         }
       }
     }
-  }, [currentFrame, frames, showStreetView]);
+  }, [currentFrame, frames, showStreetView, isPlaying]);
 
   if (!isGoogleMapsLoaded) {
     return (

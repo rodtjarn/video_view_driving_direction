@@ -29,6 +29,9 @@ export interface StreetViewFrame {
   timestamp: number;
   isCached?: boolean;
   panoramaId?: string;
+  isNearTurn?: boolean;
+  turnDirection?: 'left' | 'right' | 'straight' | 'uturn';
+  turnInstruction?: string;
 }
 
 export interface VideoPlayerState {

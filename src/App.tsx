@@ -157,6 +157,7 @@ function App() {
                 frames={streetViewFrames}
                 currentFrame={playerState?.currentFrame || 0}
                 isGoogleMapsLoaded={isLoaded}
+                isPlaying={playerState?.isPlaying || false}
               />
             </div>
             

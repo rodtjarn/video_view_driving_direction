@@ -84,12 +84,18 @@ export class GoogleMapsService {
         }
         seenLocations.add(locationKey);
         
+        // Check if this point is near a turn instruction and get turn details
+        const turnInfo = this.getTurnInformation(point, route.steps);
+        
         frames.push({
           location: point,
           heading,
           pitch: 0,
           imageUrl,
-          timestamp: i
+          timestamp: i,
+          isNearTurn: turnInfo.isNearTurn,
+          turnDirection: turnInfo.direction,
+          turnInstruction: turnInfo.instruction
         });
       } catch (error) {
         console.warn(`Failed to get street view for point ${i}:`, error);
@@ -133,7 +139,7 @@ export class GoogleMapsService {
 
   private interpolateRoutePoints(route: Route, intervalMeters: number): Location[] {
     const points: Location[] = [];
-    const turnDensity = 25; // Number of extra images before/after each turn
+    const turnDensity = 100; // Number of extra images before/after each turn (ultra-smooth turns)
     const straightInterval = intervalMeters * 5; // 5x normal interval for straight roads (80% fewer images)
     
     // Use Google's detailed path to stay on roads, but adjust density based on turn instructions
@@ -373,7 +379,7 @@ export class GoogleMapsService {
   }
 
   private isNearTurnInstruction(point: Location, steps: RouteStep[]): boolean {
-    const turnRadius = 150; // meters - consider points within 150m of a turn instruction
+    const turnRadius = 30; // meters - consider points within 30m of a turn instruction
     
     for (const step of steps) {
       if (this.isStepATurn(step.instruction)) {
@@ -385,6 +391,45 @@ export class GoogleMapsService {
     }
     
     return false;
+  }
+
+  private getTurnInformation(point: Location, steps: RouteStep[]): { isNearTurn: boolean; direction?: 'left' | 'right' | 'straight' | 'uturn'; instruction?: string } {
+    const turnRadius = 30; // meters - consider points within 30m of a turn instruction
+    
+    for (const step of steps) {
+      if (this.isStepATurn(step.instruction)) {
+        const distance = this.calculateDistance(point, step.location);
+        if (distance <= turnRadius) {
+          return {
+            isNearTurn: true,
+            direction: this.extractTurnDirection(step.instruction),
+            instruction: step.instruction
+          };
+        }
+      }
+    }
+    
+    return { isNearTurn: false };
+  }
+
+  private extractTurnDirection(instruction: string): 'left' | 'right' | 'straight' | 'uturn' {
+    const lowerInstruction = instruction.toLowerCase();
+    
+    if (lowerInstruction.includes('u-turn') || lowerInstruction.includes('make a u-turn')) {
+      return 'uturn';
+    } else if (lowerInstruction.includes('turn left') || lowerInstruction.includes('left onto')) {
+      return 'left';
+    } else if (lowerInstruction.includes('turn right') || lowerInstruction.includes('right onto')) {
+      return 'right';
+    } else if (lowerInstruction.includes('continue') || lowerInstruction.includes('straight')) {
+      return 'straight';
+    } else if (lowerInstruction.includes('left')) {
+      return 'left';
+    } else if (lowerInstruction.includes('right')) {
+      return 'right';
+    }
+    
+    return 'straight'; // Default fallback
   }
 
   private generateSearchGrid(center: Location, radiusMeters: number, pointsPerDirection: number): Location[] {

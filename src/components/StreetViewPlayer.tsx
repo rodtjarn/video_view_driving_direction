@@ -64,7 +64,11 @@ export const StreetViewPlayer: React.FC<StreetViewPlayerProps> = ({
 
   useEffect(() => {
     if (playerState.isPlaying && frames.length > 0) {
-      const frameRate = 1000 / (10 * playerState.playbackSpeed); // 10 FPS base rate
+      const currentFrame = frames[playerState.currentFrame];
+      // Use fixed 0.05 speed for turns (20x slower), normal speed otherwise
+      const effectiveSpeed = currentFrame?.isNearTurn ? 0.05 : playerState.playbackSpeed;
+      const frameRate = 1000 / (10 * effectiveSpeed); // 10 FPS base rate
+      
       intervalRef.current = setInterval(() => {
         setPlayerState(prev => {
           const nextFrame = prev.currentFrame + 1;
@@ -95,7 +99,7 @@ export const StreetViewPlayer: React.FC<StreetViewPlayerProps> = ({
         clearInterval(intervalRef.current);
       }
     };
-  }, [playerState.isPlaying, playerState.playbackSpeed, frames.length]);
+  }, [playerState.isPlaying, playerState.playbackSpeed, playerState.currentFrame, frames]);
 
   const togglePlayPause = () => {
     setPlayerState(prev => ({ ...prev, isPlaying: !prev.isPlaying }));
@@ -186,7 +190,25 @@ export const StreetViewPlayer: React.FC<StreetViewPlayerProps> = ({
         
         <div className="frame-info">
           Frame {playerState.currentFrame + 1} of {frames.length}
+          {/* Show arrival message on last frame instead of turn indicator */}
+          {playerState.currentFrame === frames.length - 1 ? (
+            <span className="arrival-indicator"> • 🏁 You have arrived</span>
+          ) : currentFrame?.isNearTurn ? (
+            <span className="turn-indicator"> • 🔄 TURN (Slow Motion)</span>
+          ) : null}
         </div>
+
+        {/* Turn direction arrow - small, lower right - hide on last frame */}
+        {currentFrame?.isNearTurn && currentFrame.turnDirection && playerState.currentFrame < frames.length - 1 && (
+          <div className="turn-arrow-small">
+            <div className={`turn-arrow-icon ${currentFrame.turnDirection}`}>
+              {currentFrame.turnDirection === 'left' && '⬅️'}
+              {currentFrame.turnDirection === 'right' && '➡️'}
+              {currentFrame.turnDirection === 'uturn' && '🔄'}
+              {currentFrame.turnDirection === 'straight' && '⬆️'}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="player-controls">
