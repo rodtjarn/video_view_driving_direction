@@ -85,7 +85,7 @@ export class GoogleMapsService {
         seenLocations.add(locationKey);
         
         // Check if this point is near a turn instruction and get turn details
-        const turnInfo = this.getTurnInformation(point, route.steps);
+        const turnInfo = this.getNextTurnInformation(point, route.steps, i, points);
         
         frames.push({
           location: point,
@@ -379,7 +379,7 @@ export class GoogleMapsService {
   }
 
   private isNearTurnInstruction(point: Location, steps: RouteStep[]): boolean {
-    const turnRadius = 30; // meters - consider points within 30m of a turn instruction
+    const turnRadius = 60; // meters - consider points within 60m of a turn instruction
     
     for (const step of steps) {
       if (this.isStepATurn(step.instruction)) {
@@ -394,7 +394,7 @@ export class GoogleMapsService {
   }
 
   private getTurnInformation(point: Location, steps: RouteStep[]): { isNearTurn: boolean; direction?: 'left' | 'right' | 'straight' | 'uturn'; instruction?: string } {
-    const turnRadius = 30; // meters - consider points within 30m of a turn instruction
+    const turnRadius = 60; // meters - consider points within 60m of a turn instruction
     
     for (const step of steps) {
       if (this.isStepATurn(step.instruction)) {
@@ -407,6 +407,85 @@ export class GoogleMapsService {
           };
         }
       }
+    }
+    
+    return { isNearTurn: false };
+  }
+
+  private getNextTurnInformation(point: Location, steps: RouteStep[], currentIndex: number, allPoints: Location[]): { isNearTurn: boolean; direction?: 'left' | 'right' | 'straight' | 'uturn'; instruction?: string } {
+    const approachRadius = 60; // meters - show turn indicator within 60m of approaching turn
+    const lookAheadDistance = 300; // meters - look up to 300m ahead for next turn
+    
+    // Get all turn instructions sorted by distance from current point
+    const turnCandidates: Array<{ step: RouteStep; distance: number; isAhead: boolean }> = [];
+    
+    for (const step of steps) {
+      if (this.isStepATurn(step.instruction)) {
+        const distanceToTurn = this.calculateDistance(point, step.location);
+        
+        if (distanceToTurn <= lookAheadDistance) {
+          // Determine if this turn is ahead of us by checking trajectory
+          let isAhead = false;
+          
+          // Check if we're getting closer to this turn in future points
+          const futurePointsToCheck = Math.min(8, allPoints.length - currentIndex - 1);
+          for (let i = 1; i <= futurePointsToCheck; i++) {
+            const futurePoint = allPoints[currentIndex + i];
+            if (futurePoint) {
+              const futureDistance = this.calculateDistance(futurePoint, step.location);
+              if (futureDistance < distanceToTurn) {
+                isAhead = true;
+                break;
+              }
+            }
+          }
+          
+          // Also check if we've been moving away from this turn (indicating we passed it)
+          if (!isAhead) {
+            const pastPointsToCheck = Math.min(5, currentIndex);
+            let wasCloser = false;
+            for (let i = 1; i <= pastPointsToCheck; i++) {
+              const pastPoint = allPoints[currentIndex - i];
+              if (pastPoint) {
+                const pastDistance = this.calculateDistance(pastPoint, step.location);
+                if (pastDistance < distanceToTurn - 15) { // We were significantly closer before
+                  wasCloser = true;
+                  break;
+                }
+              }
+            }
+            // If we weren't closer before, this turn might still be ahead
+            if (!wasCloser && distanceToTurn <= approachRadius) {
+              isAhead = true;
+            }
+          }
+          
+          turnCandidates.push({
+            step,
+            distance: distanceToTurn,
+            isAhead
+          });
+        }
+      }
+    }
+    
+    // Find the closest turn that's definitely ahead of us
+    let nextTurn: RouteStep | null = null;
+    let minDistanceToNextTurn = Infinity;
+    
+    for (const candidate of turnCandidates) {
+      if (candidate.isAhead && candidate.distance < minDistanceToNextTurn) {
+        nextTurn = candidate.step;
+        minDistanceToNextTurn = candidate.distance;
+      }
+    }
+    
+    if (nextTurn && minDistanceToNextTurn <= approachRadius) {
+      return {
+        isNearTurn: true,
+        direction: this.extractTurnDirection(nextTurn.instruction),
+        instruction: nextTurn.instruction
+      };
     }
     
     return { isNearTurn: false };

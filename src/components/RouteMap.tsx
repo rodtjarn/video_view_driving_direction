@@ -127,6 +127,15 @@ export const RouteMap: React.FC<RouteMapProps> = ({
         } else {
           // When not playing, just update marker position without changing zoom/pan
           // Keep full route view visible
+          
+          // Reset to full route view when stopped and at beginning (reset)
+          if (currentFrame === 0 && directionsRendererRef.current && route) {
+            // Fit bounds to show entire route
+            const bounds = new google.maps.LatLngBounds();
+            bounds.extend(route.start);
+            bounds.extend(route.end);
+            mapInstanceRef.current.fitBounds(bounds);
+          }
         }
       }
 
