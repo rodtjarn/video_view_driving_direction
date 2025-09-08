@@ -85,7 +85,7 @@ export class GoogleMapsService {
         seenLocations.add(locationKey);
         
         // Check if this point is near a turn instruction and get turn details
-        const turnInfo = this.getNextTurnInformation(point, route.steps, i, points);
+        const turnInfo = this.getSimpleNearbyTurnInformation(point, route.steps);
         
         frames.push({
           location: point,
@@ -406,6 +406,281 @@ export class GoogleMapsService {
             instruction: step.instruction
           };
         }
+      }
+    }
+    
+    return { isNearTurn: false };
+  }
+
+  private getSimpleNearbyTurnInformation(point: Location, steps: RouteStep[]): { isNearTurn: boolean; direction?: 'left' | 'right' | 'straight' | 'uturn'; instruction?: string } {
+    const approachRadius = 60; // meters - only show arrows within 60m of turns
+    const destinationRadius = 100; // meters - show straight arrow when near destination
+    
+    // Find the closest turn instruction within approach radius
+    let closestTurn: RouteStep | null = null;
+    let minDistance = Infinity;
+    
+    for (const step of steps) {
+      if (this.isStepATurn(step.instruction)) {
+        const distance = this.calculateDistance(point, step.location);
+        if (distance <= approachRadius && distance < minDistance) {
+          closestTurn = step;
+          minDistance = distance;
+        }
+      }
+    }
+    
+    if (closestTurn) {
+      return {
+        isNearTurn: true,
+        direction: this.extractTurnDirection(closestTurn.instruction),
+        instruction: closestTurn.instruction
+      };
+    }
+    
+    // If no turn found, check if we're near the destination (final step)
+    if (steps.length > 0) {
+      const finalStep = steps[steps.length - 1];
+      const distanceToDestination = this.calculateDistance(point, finalStep.location);
+      
+      // Show straight arrow when approaching destination after completing all turns
+      if (distanceToDestination <= destinationRadius) {
+        return {
+          isNearTurn: true,
+          direction: 'straight',
+          instruction: 'Continue straight to destination'
+        };
+      }
+    }
+    
+    return { isNearTurn: false };
+  }
+
+  private getCompassBasedTurnInformation(point: Location, steps: RouteStep[], currentIndex: number, allPoints: Location[], currentHeading: number): { isNearTurn: boolean; direction?: 'left' | 'right' | 'straight' | 'uturn'; instruction?: string } {
+    const approachRadius = 120; // meters - show arrow within 120m of turns
+    const headingChangeThreshold = 35; // degrees - higher threshold to ignore road curves
+    const lookBackFrames = 8; // frames to look back for heading change
+    const turnProximityRadius = 40; // meters - heading change must be near a turn instruction
+    
+    // Find all upcoming turns, sorted by distance
+    const upcomingTurns: Array<{ step: RouteStep; distance: number }> = [];
+    for (const step of steps) {
+      if (this.isStepATurn(step.instruction)) {
+        const distance = this.calculateDistance(point, step.location);
+        if (distance <= approachRadius * 3) {
+          upcomingTurns.push({ step, distance });
+        }
+      }
+    }
+    
+    upcomingTurns.sort((a, b) => a.distance - b.distance);
+    
+    // Check if we've completed a turn AT A TURN INSTRUCTION LOCATION
+    let completedTurnAtInstruction = false;
+    
+    if (currentIndex >= lookBackFrames && upcomingTurns.length > 0) {
+      const pastIndex = currentIndex - lookBackFrames;
+      const pastHeading = this.calculateHeading(allPoints[pastIndex], allPoints[pastIndex + 1] || point);
+      
+      // Calculate heading difference
+      let headingDiff = currentHeading - pastHeading;
+      while (headingDiff > 180) headingDiff -= 360;
+      while (headingDiff < -180) headingDiff += 360;
+      
+      const significantHeadingChange = Math.abs(headingDiff) > headingChangeThreshold;
+      
+      // Only consider it a completed turn if the heading change happened near a turn instruction
+      if (significantHeadingChange) {
+        // Check if we were near any turn instruction during the heading change
+        for (let i = pastIndex; i <= currentIndex; i++) {
+          if (i < allPoints.length) {
+            const checkPoint = allPoints[i];
+            for (const turn of upcomingTurns) {
+              const distanceToTurn = this.calculateDistance(checkPoint, turn.step.location);
+              if (distanceToTurn <= turnProximityRadius) {
+                completedTurnAtInstruction = true;
+                break;
+              }
+            }
+            if (completedTurnAtInstruction) break;
+          }
+        }
+      }
+    }
+    
+    // If we completed a turn at a turn instruction, show the second closest turn
+    if (completedTurnAtInstruction && upcomingTurns.length > 1) {
+      return {
+        isNearTurn: true,
+        direction: this.extractTurnDirection(upcomingTurns[1].step.instruction),
+        instruction: upcomingTurns[1].step.instruction
+      };
+    }
+    
+    // Otherwise show the closest upcoming turn
+    if (upcomingTurns.length > 0) {
+      const closestTurn = upcomingTurns[0];
+      if (closestTurn.distance <= approachRadius) {
+        return {
+          isNearTurn: true,
+          direction: this.extractTurnDirection(closestTurn.step.instruction),
+          instruction: closestTurn.step.instruction
+        };
+      }
+    }
+    
+    return { isNearTurn: false };
+  }
+
+  private getSimpleTurnInformation(point: Location, steps: RouteStep[]): { isNearTurn: boolean; direction?: 'left' | 'right' | 'straight' | 'uturn'; instruction?: string } {
+    const approachRadius = 60; // meters - show turn arrow within 60m
+    
+    // Find the closest upcoming turn instruction
+    let closestTurn: RouteStep | null = null;
+    let minDistance = Infinity;
+    
+    for (const step of steps) {
+      if (this.isStepATurn(step.instruction)) {
+        const distance = this.calculateDistance(point, step.location);
+        if (distance < minDistance && distance <= approachRadius) {
+          closestTurn = step;
+          minDistance = distance;
+        }
+      }
+    }
+    
+    if (closestTurn) {
+      return {
+        isNearTurn: true,
+        direction: this.extractTurnDirection(closestTurn.instruction),
+        instruction: closestTurn.instruction
+      };
+    }
+    
+    return { isNearTurn: false };
+  }
+
+  private getHeadingBasedTurnInformation(point: Location, steps: RouteStep[], currentIndex: number, allPoints: Location[], currentHeading: number): { isNearTurn: boolean; direction?: 'left' | 'right' | 'straight' | 'uturn'; instruction?: string } {
+    const approachRadius = 100; // meters - show arrows within 100m of turns
+    const headingChangeThreshold = 45; // degrees - significant heading change indicates completed turn
+    const lookBackFrames = 8; // frames to look back for heading change detection
+    
+    // Check if we just completed a turn by analyzing heading changes
+    let justCompletedTurn = false;
+    if (currentIndex >= lookBackFrames) {
+      let maxHeadingChange = 0;
+      for (let i = 1; i <= lookBackFrames; i++) {
+        const prevIndex = currentIndex - i;
+        if (prevIndex >= 0) {
+          // Calculate heading for previous point
+          const prevPoint = allPoints[prevIndex];
+          const nextPoint = allPoints[prevIndex + 1] || point;
+          const prevHeading = this.calculateHeading(prevPoint, nextPoint);
+          
+          // Calculate heading difference
+          let headingDiff = Math.abs(currentHeading - prevHeading);
+          if (headingDiff > 180) headingDiff = 360 - headingDiff; // Handle wrap-around
+          
+          maxHeadingChange = Math.max(maxHeadingChange, headingDiff);
+        }
+      }
+      
+      justCompletedTurn = maxHeadingChange > headingChangeThreshold;
+    }
+    
+    // Find all upcoming turn instructions, sorted by distance
+    const upcomingTurns: Array<{ step: RouteStep; distance: number }> = [];
+    
+    for (const step of steps) {
+      if (this.isStepATurn(step.instruction)) {
+        const distanceToTurn = this.calculateDistance(point, step.location);
+        if (distanceToTurn <= approachRadius * 2) { // Look ahead further
+          upcomingTurns.push({ step, distance: distanceToTurn });
+        }
+      }
+    }
+    
+    // Sort by distance (closest first)
+    upcomingTurns.sort((a, b) => a.distance - b.distance);
+    
+    // If we just completed a turn, show the next furthest turn (not the closest)
+    let targetTurn: RouteStep | null = null;
+    
+    if (justCompletedTurn && upcomingTurns.length > 1) {
+      // Skip the closest turn (likely the one we just completed) and show the next one
+      targetTurn = upcomingTurns[1].step;
+    } else if (upcomingTurns.length > 0) {
+      // Show the closest upcoming turn
+      targetTurn = upcomingTurns[0].step;
+    }
+    
+    if (targetTurn) {
+      const distanceToTurn = this.calculateDistance(point, targetTurn.location);
+      if (distanceToTurn <= approachRadius || justCompletedTurn) {
+        return {
+          isNearTurn: true,
+          direction: this.extractTurnDirection(targetTurn.instruction),
+          instruction: targetTurn.instruction
+        };
+      }
+    }
+    
+    return { isNearTurn: false };
+  }
+
+  private getRouteProgressTurnInformation(point: Location, steps: RouteStep[], currentIndex: number, allPoints: Location[]): { isNearTurn: boolean; direction?: 'left' | 'right' | 'straight' | 'uturn'; instruction?: string } {
+    const approachRadius = 80; // meters - start showing turn arrow within 80m
+    
+    // Calculate cumulative distance from start to current point
+    let cumulativeDistance = 0;
+    for (let i = 1; i <= currentIndex; i++) {
+      cumulativeDistance += this.calculateDistance(allPoints[i - 1], allPoints[i]);
+    }
+    
+    // Find which step we're currently on and track progress through it
+    let currentStepIndex = -1;
+    let accumulatedStepDistance = 0;
+    let remainingDistanceInCurrentStep = 0;
+    
+    for (let i = 0; i < steps.length; i++) {
+      const nextAccumulated = accumulatedStepDistance + steps[i].distance;
+      if (cumulativeDistance <= nextAccumulated) {
+        currentStepIndex = i;
+        remainingDistanceInCurrentStep = nextAccumulated - cumulativeDistance;
+        break;
+      }
+      accumulatedStepDistance = nextAccumulated;
+    }
+    
+    // Check if current step is a turn and if we've passed its midpoint
+    let completedCurrentTurn = false;
+    if (currentStepIndex >= 0 && this.isStepATurn(steps[currentStepIndex].instruction)) {
+      const stepMidpoint = steps[currentStepIndex].distance / 2;
+      completedCurrentTurn = remainingDistanceInCurrentStep < stepMidpoint;
+    }
+    
+    // Look for the next turn instruction
+    let nextTurnStep: RouteStep | null = null;
+    let searchStartIndex = completedCurrentTurn ? currentStepIndex + 1 : currentStepIndex;
+    
+    for (let i = searchStartIndex; i < steps.length; i++) {
+      if (this.isStepATurn(steps[i].instruction)) {
+        nextTurnStep = steps[i];
+        break;
+      }
+    }
+    
+    // If we found a next turn, check if we should show it
+    if (nextTurnStep) {
+      const distanceToTurn = this.calculateDistance(point, nextTurnStep.location);
+      
+      // Show arrow if we're within approach radius OR if we just completed a turn
+      if (distanceToTurn <= approachRadius || completedCurrentTurn) {
+        return {
+          isNearTurn: true,
+          direction: this.extractTurnDirection(nextTurnStep.instruction),
+          instruction: nextTurnStep.instruction
+        };
       }
     }
     

@@ -199,16 +199,23 @@ export const StreetViewPlayer: React.FC<StreetViewPlayerProps> = ({
         </div>
 
         {/* Turn direction arrow - small, lower right - hide on last frame */}
-        {currentFrame?.isNearTurn && currentFrame.turnDirection && playerState.currentFrame < frames.length - 1 && (
-          <div className="turn-arrow-small">
-            <div className={`turn-arrow-icon ${currentFrame.turnDirection}`}>
-              {currentFrame.turnDirection === 'left' && '⬅️'}
-              {currentFrame.turnDirection === 'right' && '➡️'}
-              {currentFrame.turnDirection === 'uturn' && '🔄'}
-              {currentFrame.turnDirection === 'straight' && '⬆️'}
+        {(() => {
+          // Look ahead to next frame to eliminate lag
+          const nextFrameIndex = playerState.currentFrame + 1;
+          const nextFrame = nextFrameIndex < frames.length ? frames[nextFrameIndex] : null;
+          const frameToShow = nextFrame?.isNearTurn ? nextFrame : currentFrame;
+          
+          return frameToShow?.isNearTurn && frameToShow.turnDirection && playerState.currentFrame < frames.length - 1 && (
+            <div className="turn-arrow-small">
+              <div className={`turn-arrow-icon ${frameToShow.turnDirection}`}>
+                {frameToShow.turnDirection === 'left' && '⬅️'}
+                {frameToShow.turnDirection === 'right' && '➡️'}
+                {frameToShow.turnDirection === 'uturn' && '🔄'}
+                {frameToShow.turnDirection === 'straight' && '⬆️'}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       <div className="player-controls">
